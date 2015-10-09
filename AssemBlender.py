@@ -14,15 +14,15 @@ args = sys.argv[1:]
 def usage():
     print """
     Usage: 
-    parse_mummer_overlap_for_mix.py <mummer_overlap_tab_file> <assembly_fasta_file> <run_name>
+    parse_mummer_overlap_for_mix.py <mummer_overlap_tab_file> <assembly_fasta_file> <run_name> <scaffolding> <scaffolding_input_list>
 
-    This script parses a mummer/nucmer overlap output file in tabular format, finding the contigs wholely contained within other contigs. These are then removed from the assembly.
+    This script parses a mummer/nucmer overlap output file in tabular format, finding the contigs wholely contained within other contigs. These are then removed from the assembly. If rescaffolding the contigs from the scaffolding in the original assesmblies is wanted, put 'yes', 'Yes', 'y', or 'Y'. Any other value will not trigger scaffolding. If multiple rounds of merging were performed, rescaffolding requires the contigging output files from each merge operation to fully utilize the scaffolding information from the initial asseblies. Otherwise, some of the contigging info will be missing, but contigging will still be performed with the remainging information. Input the paths to all these files as a comma separted list without spaces, i.e. merge1_contigging_out,merge2_contigging_out,merge3_contigging_out
     
     
     """
     sys.exit(-1)
 
-if len(args) != 3 or sys.argv[1] == '-h' or sys.argv[1] == '-help' or sys.argv[1] == '-H' or sys.argv[1] == '-Help' or sys.argv[1] == '--h' or sys.argv[1] == '--help':
+if (len(args) != 3 and len(args) != 4 and len(args) != 5) or sys.argv[1] == '-h' or sys.argv[1] == '-help' or sys.argv[1] == '-H' or sys.argv[1] == '-Help' or sys.argv[1] == '--h' or sys.argv[1] == '--help':
     usage()
 
 '''
