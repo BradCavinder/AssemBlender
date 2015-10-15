@@ -14,15 +14,15 @@ args = sys.argv[1:]
 def usage():
     print """
     Usage: 
-    parse_mummer_overlap_for_mix.py <mummer_overlap_tab_file> <assembly_fasta_file> <run_name> <scaffolding> <scaffolding_input_list>
+    parse_mummer_overlap_for_mix.py <mummer_overlap_tab_file> <assembly_fasta_file> <run_name> <scaffolding> <contig_in_file> <contig_self_file>
 
-    This script parses a mummer/nucmer overlap output file in tabular format, finding the contigs wholely contained within other contigs. These are then removed from the assembly. If rescaffolding the contigs from the scaffolding in the original assesmblies is wanted, put 'yes', 'Yes', 'y', or 'Y'. Any other value will not trigger scaffolding. If multiple rounds of merging were performed, rescaffolding requires the contigging output files from each merge operation to fully utilize the scaffolding information from the initial asseblies. Otherwise, some of the contigging info will be missing, but contigging will still be performed with the remainging information. Input the paths to all these files as a comma separted list without spaces, i.e. merge1_contigging_out,merge2_contigging_out,merge3_contigging_out
+    This script parses a mummer/nucmer overlap output file in tabular format, finding the contigs wholely contained within other contigs. These are then removed from the assembly. If rescaffolding the contigs from the scaffolding in the original assesmblies is wanted, put 'yes', 'Yes', 'y', 'Y', or any word starting with "Y". Other values will not trigger scaffolding. If merging the outputs of previous split runs, combine the contig_in and contig_self files from all previous runs and provide their paths. 
     
     
     """
     sys.exit(-1)
 
-if (len(args) != 3 and len(args) != 4 and len(args) != 5) or sys.argv[1] == '-h' or sys.argv[1] == '-help' or sys.argv[1] == '-H' or sys.argv[1] == '-Help' or sys.argv[1] == '--h' or sys.argv[1] == '--help':
+if (len(args) != 4 and len(args) != 5 and len(args) != 6) or sys.argv[1] == '-h' or sys.argv[1] == '-help' or sys.argv[1] == '-H' or sys.argv[1] == '-Help' or sys.argv[1] == '--h' or sys.argv[1] == '--help':
     usage()
 
 '''
@@ -36,13 +36,16 @@ good[best_query_contig] = [ref_contig, end of ref_contig extended, end of query_
 
 '''
 
-def process_single(seen, good, assembly, bad, report_list, contigs, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag):
+def process_single(seen, good, assembly, bad, report_list, contigs, contig_self, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag):
     if ref_name not in seen:
         seen[ref_name]["start"] = []
         seen[ref_name]["end"] = []
         
     if query_coverage == "100.00" and int(query_align_len) == int(query_len):
         bad[query_name] = 1
+        if "." in query_name:
+            super_num, contig_num = query_name.split(".")
+            contig_self[super_num][contig_num][ref_name] = strand
         assembly.pop(query_name, None)
         contigs.pop(query_name, None)
         report_list.append(ref_name + "\t" + query_name + "\t" + "covered_100")
@@ -81,19 +84,15 @@ def process_single(seen, good, assembly, bad, report_list, contigs, ref_start, r
                 report_list.append("Grabbing sequence in process_single. 4th" + " " + query_name + " " + ref_name)
         elif float(query_coverage) >= 98.00 and float(percent_id) >= 98.00:
             bad[query_name] = 1
+            if "." in query_name:
+                super_num, contig_num = query_name.split(".")
+                contig_self[super_num][contig_num][ref_name] = strand
             assembly.pop(query_name, None)
             contigs.pop(query_name, None)
             report_list.append(ref_name + "\t" + query_name + "\t" + "covered_98")
-    return bad, seen, assembly, good, contigs
+    return bad, seen, assembly, good, contigs, contig_self
 
-def process_ref_combined(seen, good, assembly, bad, report_list, contigs, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag):
-    
-    if query_coverage == "100.00" and int(query_align_len) == int(query_len) and float(percent_id) >= 97.9:
-        bad[query_name] = 1
-        assembly.pop(query_name, None)
-        contigs.pop(query_name, None)
-        report_list.append(ref_name + "\t" + query_name + "\t" + "covered_100")
-        return bad, seen, assembly, good
+def process_ref_combined(seen, good, assembly, bad, report_list, contigs, contig_self, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag):
         
     if ref_name not in seen:
         seen[ref_name]["start"] = []
@@ -103,6 +102,25 @@ def process_ref_combined(seen, good, assembly, bad, report_list, contigs, ref_st
     combined_overlap_end = good[ref_name][1]
     ref_overlap_end = good[ref_name][2]
     ref_to_combined_strand = good[ref_name][3]
+    
+    if query_coverage == "100.00" and int(query_align_len) == int(query_len) and float(percent_id) >= 97.9:
+        bad[query_name] = 1
+        if "." in query_name:
+            super_num, contig_num = query_name.split(".")
+            if strand == "1":
+                if ref_to_combined_strand == "1":
+                    contig_self[super_num][contig_num][combined_ref_name] = "1"
+                else:
+                    contig_self[super_num][contig_num][combined_ref_name] = "-1"
+            else:
+                if ref_to_combined_strand == "1":
+                    contig_self[super_num][contig_num][combined_ref_name] = "-1"
+                else:
+                    contig_self[super_num][contig_num][combined_ref_name] = "1"
+        assembly.pop(query_name, None)
+        contigs.pop(query_name, None)
+        report_list.append(ref_name + "\t" + query_name + "\t" + "covered_100")
+        return bad, seen, assembly, good
             
     
     ref_end_dif = int(ref_len) - int(ref_end)
@@ -159,10 +177,22 @@ def process_ref_combined(seen, good, assembly, bad, report_list, contigs, ref_st
                 report_list.append("Grabbing sequence in process_ref_combined. 8th" + " " + query_name + " " + ref_name + " " + combined_ref_name)
     elif float(query_coverage) >= 98.00 and float(percent_id) >= 98.00:
         bad[query_name] = 1
+        if "." in query_name:
+            super_num, contig_num = query_name.split(".")
+            if strand == "1":
+                if ref_to_combined_strand == "1":
+                    contig_self[super_num][contig_num][combined_ref_name] = "1"
+                else:
+                    contig_self[super_num][contig_num][combined_ref_name] = "-1"
+            else:
+                if ref_to_combined_strand == "1":
+                    contig_self[super_num][contig_num][combined_ref_name] = "-1"
+                else:
+                    contig_self[super_num][contig_num][combined_ref_name] = "1"
         assembly.pop(query_name, None)
         contigs.pop(query_name, None)
         report_list.append(ref_name + "\t" + query_name + "\t" + "covered_98")
-    return bad, seen, assembly, good
+    return bad, seen, assembly, good, contig_self
 
 def process_query_combined(seen, good, assembly, bad, report_list, contigs, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag):
     if ref_name not in seen:
@@ -348,7 +378,66 @@ def process_both_combined(seen, good, assembly, bad, report_list, contigs, ref_s
                     report_list.append("Grabbing sequence in process_both_combined. 16th" + " " + query_name + " " + ref_name + " " + combined_query_name + " " + combined_ref_name)
     return bad, seen, assembly, good
 
-def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, contigs, covers, processed):
+def process_contigs(last_ref, final_name, final_name_ori, contig_self, contig_in, seen_entry):
+    
+    '''
+    dict contig_in
+    contig_in[base_contig_name][contained_contig_name] = ori of contained to base contig
+    
+    dict contig_self
+    contig_self[contained_supercontgi_num][contained_contig_num][base_contig_name] = ori of contained to base contig
+    '''
+    
+    for item in seen_entry:
+        if item[5] == final_name:
+            if "." in item[7]:
+                super_num, contig_num = item[7].split(".")
+                contig_self[super_num][contig_num][final_name] = final_name_ori
+                contig_in[final_name][item[7]] = final_name_ori
+                for item in contig_in[item[7]]:
+                    if item not in contig_in[final_name]:
+                        if (final_name_ori == "1" and contig_in[item[7]][item] == "1") or (final_name_ori == "-1" and contig_in[item[7]][item] == "-1"):
+                            contig_in[final_name][item] = "1"
+                        else:
+                            contig_in[final_name][item] = "-1"
+                contig_in.pop(item[7], None)
+        elif item[7] == final_name:
+            if "." in last_ref:
+                super_num, contig_num = last_ref.split(".")
+                contig_self[super_num][contig_num][final_name] = final_name_ori
+                contig_in[final_name][last_ref] = contig_self[super_num][contig_num][final_name]
+                for item in contig_in[item[5]]:
+                    if item not in contig_in[final_name]:
+                        if (final_name_ori == "1" and contig_in[item[5]][item] == "1") or (final_name_ori == "-1" and contig_in[item[5]][item] == "-1"):
+                            contig_in[final_name][item] = "1"
+                        else:
+                            contig_in[final_name][item] = "-1"
+                contig_in.pop(item[5], None)
+        else:
+            print "Not sure what is the final name comared to inputs.\nFinal_name =", final_name, "  last_ref =", last_ref, "  actual_ref =", item[5], "  query =", item[1], "  actual_query =", item[7]
+            if "." in item[7]:
+                super_num, contig_num = item[7].split(".")
+                contig_self[super_num][contig_num][final_name] = final_name_ori
+                contig_in[final_name][item[7]] = final_name_ori
+                for item in contig_in[item[7]]:
+                    if item not in contig_in[final_name]:
+                        if (final_name_ori == "1" and contig_in[item[7]][item] == "1") or (final_name_ori == "-1" and contig_in[item[7]][item] == "-1"):
+                            contig_in[final_name][item] = "1"
+                        else:
+                            contig_in[final_name][item] = "-1"
+                contig_in.pop(item[7], None)
+    
+        for key in contig_in[final_name]:
+            super_num, contig_num = key.split(".")
+            screen_list = contig_self[super_num][contig_num].keys()
+            for item in screen_list:
+                if item in contig_in[final_name]:
+                    contig_self[super_num][contig_num].pop(item, None)
+    
+    return contig_self, contig_in
+
+
+def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, contigs, covers, processed, contig_self, contig_in):
     final_name_list = []
     final_name_dict = {}
     if last_ref in good:
@@ -396,8 +485,6 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                         else:
                             final_name_dict[seen[last_ref]["start"][0][7]] = "-1"
                     final_name_list.append(seen[last_ref]["start"][0][7])
-                if seen[last_ref]["start"][0][1] == 'A1_contig00078.001':
-                    print "A1_contig00078.001 is longest for start."
         
         if len(seen[last_ref]["end"]) > 0:            
             seen[last_ref]["end"].sort(key=itemgetter(0), reverse=True)
@@ -419,7 +506,6 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                         else:
                             final_name_dict[seen[last_ref]["end"][0][7]] = "-1"
                     final_name_list.append(seen[last_ref]["end"][0][7])
-
             
         if pop == 0:
             seen = Vividict()
@@ -442,6 +528,10 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                     print "Problem: last_ref is not equal to actual_ref in seen even though the query covers the ref. Last_ref=", last_ref, "actual_ref in seen=", seen[last_ref]["start"][0][5] 
                 covers[seen[last_ref]["start"][0][1]] = actual_ref
                 report_list.append(last_ref + " (" + actual_ref + ")"+ "\t" + seen[last_ref]["start"][0][1] + "\t" + "query covers ref")
+                if "." in seen[last_ref]["start"][0][1]:
+                    super_num, contig_num = seen[last_ref]["start"][0][1].split(".")
+                    contig_self[super_num][contig_num] = {[last_ref]: seen[last_ref]["start"][4]}
+                    contig_in[last_ref][seen[last_ref]["start"][0][1]] = seen[last_ref]["start"][4]
                 contigs[actual_ref] = contigs[seen[last_ref]["start"][0][1]]
                 contigs.pop(seen[last_ref]["start"][0][1], None)
                 contigs.pop(seen[last_ref]["start"][0][7], None)
@@ -449,8 +539,7 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                 contigs.pop(seen[last_ref]["end"][0][1], None)
                 contigs.pop(seen[last_ref]["end"][0][7], None)
                 processed[last_ref] = 1
-                del seen[last_ref]["start"][0]
-                del seen[last_ref]["end"][0]
+
             elif seen[last_ref]["start"][0][7] == seen[last_ref]["end"][0][7]:
                 report_list.append(last_ref + " (" + actual_ref + ")"+ "\t" + seen[last_ref]["start"][0][1] + " and " + seen[last_ref]["start"][0][1] + " both in " + seen[last_ref]["start"][0][7] + "\t" + " Combined query covers ref")
                 start_seq = ''
@@ -465,11 +554,11 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                     contigs.pop(seen[last_ref]["start"][0][7], None)
                     contigs.pop(seen[last_ref]["start"][0][1], None)
                     contigs.pop(seen[last_ref]["end"][0][1], None)
+                contig_self, contig_in = process_contigs(last_ref, final_name, final_name_dict[final_name], contig_self, contig_in, seen[last_ref]["start"])
                 processed[last_ref] = 1
-                del seen[last_ref]["start"][0]
-                del seen[last_ref]["end"][0]
                 
             else:
+                contig_self, contig_in = process_contigs(last_ref, final_name, final_name_dict[final_name], contig_self, contig_in, seen[last_ref]["start"])
                 if seen[last_ref]["start"][0][1] in good:
                     if seen[last_ref]["start"][0][1] != actual_ref:
                         bad[seen[last_ref]["start"][0][1]] = 1
@@ -511,7 +600,7 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                     if last_ref in good:
                         good.pop(last_ref, None)
                 
-                
+                contig_self, contig_in = process_contigs(last_ref, final_name, final_name_dict[final_name], contig_self, contig_in, seen[last_ref]["end"])
                 if seen[last_ref]["end"][0][1] in good:
                     if seen[last_ref]["end"][0][1] != actual_ref:
                         bad[seen[last_ref]["end"][0][1]] = 1
@@ -552,8 +641,6 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                         contigs.pop(seen[last_ref]["end"][0][7], None)
                     if last_ref in good:
                         good.pop(last_ref, None)
-                del seen[last_ref]["start"][0]
-                del seen[last_ref]["end"][0]
                 
             '''        
         seen dictionary:
@@ -564,6 +651,7 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
             '''
         
         elif pop == 1:
+            contig_self, contig_in = process_contigs(last_ref, final_name, final_name_dict[final_name], contig_self, contig_in, seen[last_ref]["start"])
             if seen[last_ref]["start"][0][1] in good:
                 if seen[last_ref]["start"][0][1] != actual_ref:
                     bad[seen[last_ref]["start"][0][1]] = 1
@@ -599,9 +687,9 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                     contigs.pop(seen[last_ref]["start"][0][7], None)
                 if last_ref in good:
                     good.pop(last_ref, None)
-            del seen[last_ref]["start"][0]
                         
         elif pop == 2:
+            contig_self, contig_in = process_contigs(last_ref, final_name, final_name_dict[final_name], contig_self, contig_in, seen[last_ref]["end"])
             if seen[last_ref]["end"][0][1] in good:
                 if seen[last_ref]["end"][0][1] != actual_ref:
                     bad[seen[last_ref]["end"][0][1]] = 1
@@ -636,8 +724,9 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
                     contigs.pop(seen[last_ref]["end"][0][7], None)
                 if last_ref in good:
                     good.pop(last_ref, None)
-            del seen[last_ref]["end"][0]
         
+        seen[last_ref]["start"].pop(0, None)
+        seen[last_ref]["end"].pop(0, None)
         try:
             new_seq = start_seq + assembly[actual_ref] + end_seq
         except:
@@ -696,7 +785,7 @@ def find_longest_extension(seen, good, bad, report_list, assembly, last_ref, con
         
     seen = Vividict()
     last_ref = ''
-    return seen, assembly, good, bad, last_ref, contigs, covers, processed
+    return seen, assembly, good, bad, last_ref, contigs, covers, processed, contig_self, contig_in
 
 def clear_multiple_matches(previous_ref, seen, bad, processed):
     last_ref = previous_ref
@@ -750,6 +839,26 @@ def clear_multiple_matches(previous_ref, seen, bad, processed):
             else:
                 seen[last_ref]["end"].pop(-1)
     return seen, bad, processed
+
+def supercontiger(contigs, assembly, contig_in, contig_self):
+    
+    '''
+    dict contig_in
+    contig_in[base_contig_name][contained_contig_name] = ori of contained to base contig
+    
+    dict contig_self
+    contig_self[contained_supercontgi_num][contained_contig_num][base_contig_name] = ori of contained to base contig
+    
+    Ordered_dict contigs
+    contigs[base_contig] = [ordered list of contigs contributing sequence to base contig]
+    
+    '''
+    
+    connection_track = {}
+    
+    for contig in contigs:
+        if len(contigs[contig]) > 1:
+            pass
     
 def main():
 
@@ -760,10 +869,15 @@ def main():
     report_list = []
     assembly = OrderedDict()
     contigs = OrderedDict()
+    contig_self = Vividict()
+    contig_track = []
+    contig_in = Vividict()
     last = []
     seen = Vividict()
     bad_out = os.path.splitext(sys.argv[1])[0] + "_" + sys.argv[3] + "_report.out"
     contigs_out = os.path.splitext(sys.argv[1])[0] + "_" + sys.argv[3] + "_contigs.out"
+    contig_in_out = os.path.splitext(sys.argv[1])[0] + "_" + sys.argv[3] + "_contig_in.out"
+    contig_self_out = os.path.splitext(sys.argv[1])[0] + "_" + sys.argv[3] + "_contig_self.out"
     
     with open(sys.argv[2], "r") as f:
         for title, seq in fastaIO.FastaGeneralIterator(f):
@@ -785,7 +899,7 @@ def main():
             ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag = line.split("\t")
                         
             if last_ref and ref_name != last_ref:
-                seen, assembly, good, bad, last_ref, contigs, covers, processed = find_longest_extension(seen, good, bad, report_list, assembly, last_ref, contigs, covers, processed)
+                seen, assembly, good, bad, last_ref, contigs, covers, processed, contig_self, contig_in = find_longest_extension(seen, good, bad, report_list, assembly, last_ref, contigs, covers, processed, contig_self, contig_in)
             
             if ref_name == query_name:
                 continue
@@ -802,7 +916,7 @@ def main():
                 if query_name not in good:
                     if query_name < ref_name:
                         continue
-                    bad, seen, assembly, good, contigs = process_single(seen, good, assembly, bad, report_list, contigs, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag)
+                    bad, seen, assembly, good, contigs, contig_self, contig_track = process_single(seen, good, assembly, bad, report_list, contigs, contig_self, contig_track, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag)
                     if last_query == query_name and previous_ref == ref_name:
                         if len(seen[ref_name]["start"]) > 0 or len(seen[ref_name]["end"])> 0:
                             seen, bad, processed = clear_multiple_matches(previous_ref, seen, bad, processed)
@@ -831,13 +945,24 @@ def main():
                     if query_name in bad:
                         continue
                     else:
-                        bad, seen, assembly, good = process_ref_combined(seen, good, assembly, bad, report_list, contigs, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag)
+                        bad, seen, assembly, good, contig_self, contig_track = process_ref_combined(seen, good, assembly, bad, report_list, contigs, contig_self, contig_track, ref_start, ref_end, query_start, query_end, ref_align_len, query_align_len, percent_id, ref_len, query_len, ref_coverage, query_coverage, frame, strand, ref_name, query_name, tag)
                         if last_query == query_name and previous_ref == ref_name:
                             if len(seen[ref_name]["start"]) > 0 or len(seen[ref_name]["end"])> 0:
                                 seen, bad, processed = clear_multiple_matches(previous_ref, seen, bad, processed)
                         last_query = query_name
         
-        seen, assembly, good, bad, last_ref, contigs, covers, processed = find_longest_extension(seen, good, bad, report_list, assembly, last_ref, contigs, covers, processed)        
+        seen, assembly, good, bad, last_ref, contigs, covers, processed, contig_self, contig_in = find_longest_extension(seen, good, bad, report_list, assembly, last_ref, contigs, covers, processed, contig_self, contig_in)
+    if sys.argv[4].upper()[0] == "Y":
+        contigs, assembly = supercontiger(contigs, assembly, contig_in, contig_self)
+    else:
+        with open(contig_in_out, "w", 1) as out:
+            for contig in contig_in:
+                print>>out, contig + "\t" + ",".join(contig_in[contig])
+        with open(contig_self_out, "w", 1) as out:
+            for super_num in contig_self:
+                for contig_num in contig_self[super_num]:
+                    print>>out, super_num + "." + contig_num + "\t" + ",".join(contig_self[super_num][contig_num])
+        
     for item in good:
         if item not in contigs:
             report_list.append(item + "\t" + "Still in good but not contigs after processing\n")
